@@ -1,5 +1,16 @@
 locals {
-  tags            = { ProjectName = "Information Assistant", BuildNumber = var.buildNumber }
+  tags            = { 
+    ProjectName = "Information Assistant", 
+    BuildNumber = var.buildNumber ,
+    Project     = "InfoAssistant-test"
+    Owner       = "Guai Zi Wei",
+    Created = "20241128",
+    Environment = "Testing",
+    Entity = "DTID",
+    "Application or Project-Name" = "ia-01",
+    Tier = "AppTier",
+    Zone = "IntranetZone"
+    }
   azure_roles     = jsondecode(file("${path.module}/azure_roles.json"))
   selected_roles  = ["CognitiveServicesOpenAIUser", 
                       "CognitiveServicesUser", 
