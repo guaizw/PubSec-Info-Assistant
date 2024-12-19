@@ -1,3 +1,4 @@
+
 // /workspaces/PubSec-Info-Assistant/app/frontend/src/pages/layout/Layout.tsx
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
@@ -8,87 +9,78 @@ import styles from "./Layout.module.css";
 import { Title } from "../../components/Title/Title";
 import { getFeatureFlags, GetFeatureFlagsResponse } from "../../api";
 import { useEffect, useState } from "react";
-import axios from 'axios';
-import { execSync } from 'child_process';
-
-// Function to get the access token using Azure CLI
-function getAccessToken() {
-    try {
-        const result = execSync('az account get-access-token --resource https://graph.microsoft.com/ --query accessToken -o tsv');
-        return result.toString().trim();
-    } catch (error) {
-        console.error('Error getting access token:', error);
-        return null;
+import { PublicClientApplication, Configuration, AuthenticationResult } from '@azure/msal-browser';
+const msalConfig: Configuration = {
+    auth: { 
+        authority: "https://login.microsoftonline.com/a2c8f93f-126b-4596-a360-8941a8984b08",
+        clientId: "37eea007-203c-4f92-bb40-8c1cd0091761",
+        postLogoutRedirectUri: "https://infoasst-web-jgywy.azurewebsites.net/.auth/login/aad/callback",
+        redirectUri: "https://infoasst-web-jgywy.azurewebsites.net/.auth/login/aad/callback",
+        navigateToLoginRequestUrl: true
+    },
+    cache: {
+        cacheLocation: 'sessionStorage',
+        storeAuthStateInCookie: true
     }
+};
+
+const loginRequest = {
+    scopes: ['api://37eea007-203c-4f92-bb40-8c1cd0091761/.default']
+};
+
+const msalInstance = new PublicClientApplication(msalConfig);
+
+async function initializeMsal() {
+    await msalInstance.initialize();
 }
 
-// The appRoleId you are checking for
-const targetAppRoleId = 'a035ee52-37a8-4093-b175-63e6481f2e7b';
-
-async function getUserId(accessToken) {
+async function loginAndGetToken() {
     try {
-        const response = await axios.get('https://graph.microsoft.com/v1.0/me', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        return response.data.id;
+        await initializeMsal();
+        const loginResponse: AuthenticationResult = await msalInstance.loginPopup(loginRequest);
+
+        const account = loginResponse.account;
+        if (account) {
+            const tokenResponse: AuthenticationResult = await msalInstance.acquireTokenSilent({
+                scopes: ['User.Read'],
+                account: account,
+            });
+
+            console.log('Bearer Token:', tokenResponse.accessToken);
+            return tokenResponse.accessToken;
+        }
     } catch (error) {
-        console.error('Error fetching user ID:', error);
-        return null;
+        console.error('Error acquiring token:', error);
     }
+    return null;
 }
-
-async function checkAppRole() {
-    const accessToken = getAccessToken();
-    if (!accessToken) {
-        return false;
-    }
-
-    const userId = await getUserId(accessToken);
-    if (!userId) {
-        return false;
-    }
-
-    try {
-        const response = await axios.get(`https://graph.microsoft.com/v1.0/users/${userId}/appRoleAssignments`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-
-        const appRoleAssignments = response.data.value;
-        return appRoleAssignments.some(role => role.appRoleId === targetAppRoleId);
-    } catch (error) {
-        console.error('Error fetching app role assignments:', error);
-        return false;
-    }
-}
-
-
-// const contentmanagerstatus = checkAppRole();
 
 export const Layout = () => {
     const [featureFlags, setFeatureFlags] = useState<GetFeatureFlagsResponse | null>(null);
-    const [contentManagerStatus, setContentManagerStatus] = useState<boolean | null>(null);
+    const [contentManagerStatus, setContentManagerStatus] = useState<string | null>(null);
 
     async function fetchFeatureFlags() {
         try {
             const fetchedFeatureFlags = await getFeatureFlags();
             setFeatureFlags(fetchedFeatureFlags);
         } catch (error) {
-            // Handle the error here
             console.log(error);
         }
     }
+
     useEffect(() => {
         fetchFeatureFlags();
-        checkAppRole().then(status => setContentManagerStatus(status));
+        async function fetchContentManagerStatus() {
+            const status = await loginAndGetToken();
+            setContentManagerStatus(status);
+        }
+        fetchContentManagerStatus();
     }, []);
 
-    if (contentManagerStatus === null) {
-        return <div>Loading...</div>;
-    }
+    // if (contentManagerStatus === null) {
+    //     return <div>Waiting for Authentication...</div>;
+    // }
+
     return (
         <div className={styles.layout}>
             <header className={styles.header} role={"banner"}>
@@ -105,33 +97,30 @@ export const Layout = () => {
                                     Chat
                                 </NavLink>
                             </li>
-                            {contentManagerStatus && (
                             <li className={styles.headerNavLeftMargin}>
                                 <NavLink to="/content" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Manage Content
+                                    Manage Content {contentManagerStatus}
                                 </NavLink>
-                            </li>)}
+                            </li>
                             {featureFlags?.ENABLE_MATH_ASSISTANT &&
                                 <li className={styles.headerNavLeftMargin}>
                                     <NavLink to="/tutor" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Math Assistant
-                                    <br />  
-                                    <p className={styles.centered}>(preview)</p>
+                                        Math Assistant
+                                        <br />
+                                        <p className={styles.centered}>(preview)</p>
                                     </NavLink>
                                 </li>
                             }
                             {featureFlags?.ENABLE_TABULAR_DATA_ASSISTANT &&
                                 <li className={styles.headerNavLeftMargin}>
                                     <NavLink to="/tda" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
-                                    Tabular Data Assistant
-                                    <br />  
-                                    <p className={styles.centered}>(preview)</p>
+                                        Tabular Data Assistant
+                                        <br />
+                                        <p className={styles.centered}>(preview)</p>
                                     </NavLink>
-                                    
-                                      
                                 </li>
                             }
-                    </ul>
+                        </ul>
                     </nav>
                 </div>
             </header>
@@ -142,3 +131,4 @@ export const Layout = () => {
         </div>
     );
 };
+
